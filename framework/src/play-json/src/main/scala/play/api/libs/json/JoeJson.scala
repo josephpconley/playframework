@@ -146,15 +146,13 @@ object JoeJson {
     var hasRec = false
 
     // combines all reads into CanBuildX
-    val canBuild = effectiveInferredImplicits.map {
-      case i @ Implicit(name, t, impl, rec, isDefault, tpe) =>
+    val canBuild = effectiveInferredImplicits.zipWithIndex.map {
+      case (i @ Implicit(name, t, impl, rec, isDefault, tpe), idx: Int) =>
         // inception of (__ \ name).read(impl)
         val jspathTree = Apply(
           Select(jsPathSelect, newTermName(scala.reflect.NameTransformer.encode("\\"))),
           List(Literal(Constant(name.decoded)))
         )
-
-        println("implicit " + i)
 
         if (!rec) {
           val callMethod = if (t.typeConstructor <:< typeOf[Option[_]].typeConstructor) nullableMethodName else methodName
@@ -165,19 +163,12 @@ object JoeJson {
           )
 
           if (isDefault) {
-            val defaultMethod = (companionType member newTermName("apply$default$3")).asMethod
-
-            val default = Apply(
-              Select(Ident(companionSymbol), newTermName("apply$default$3")),
-              Nil
-            )
-
-            val defaultValue = c.eval(c.Expr[String](default))
-            println(defaultValue)
+            val default = Select(Ident(companionSymbol), newTermName("apply$default$" + (idx + 1)))
+            val defaultValue = c.eval(c.Expr[Any](default))
 
             val pureReads = Apply(
               Select(readsSelect, newTermName("pure")),
-              List(default)
+              List(Literal(Constant(defaultValue)))
             )
 
             Apply(

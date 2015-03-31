@@ -15,6 +15,9 @@ object JsMacroImpl {
   def readsImpl[A: c.WeakTypeTag](c: Context): c.Expr[Reads[A]] =
     macroImpl[A, Reads](c, "read", "map", reads = true, writes = false)
 
+  def readsWithDefaultImpl[A: c.WeakTypeTag](c: Context): c.Expr[Reads[A]] =
+    macroImpl[A, Reads](c, "read", "map", reads = true, writes = false)
+
   def writesImpl[A: c.WeakTypeTag](c: Context): c.Expr[Writes[A]] =
     macroImpl[A, Writes](c, "write", "contramap", reads = false, writes = true)
 
@@ -54,6 +57,8 @@ object JsMacroImpl {
       case Some(s) => s.asMethod
     }
 
+    println("effectiveUnapply " + effectiveUnapply.returnType)
+
     val unapplyReturnTypes: Option[List[Type]] = effectiveUnapply.returnType match {
       case TypeRef(_, _, Nil) => {
         c.abort(c.enclosingPosition, s"Unapply of ${companionSymbol} has no parameters. Are you using an empty case class?")
@@ -73,7 +78,7 @@ object JsMacroImpl {
       case _ => None
     }
 
-    //println("Unapply return type:" + unapplyReturnTypes)
+    println("Unapply return type:" + unapplyReturnTypes)
 
     val applies =
       companionType.declaration(stringToTermName("apply")) match {
@@ -104,11 +109,11 @@ object JsMacroImpl {
       case None => c.abort(c.enclosingPosition, "No apply function found matching unapply parameters")
     }
 
-    //println("apply found:" + apply)
+    println("apply found:" + apply)
 
-    final case class Implicit(paramName: Name, paramType: Type, neededImplicit: Tree, isRecursive: Boolean, tpe: Type)
+    final case class Implicit(paramName: Name, paramType: Type, neededImplicit: Tree, isRecursive: Boolean, isDefault: Boolean, tpe: Type)
 
-    val createImplicit = { (name: Name, implType: c.universe.type#Type) =>
+    val createImplicit = { (name: Name, implType: c.universe.type#Type, isDefault: Boolean) =>
       val (isRecursive, tpe) = implType match {
         case TypeRef(_, t, args) =>
           val isRec = args.exists(_.typeSymbol == companioned)
@@ -123,17 +128,22 @@ object JsMacroImpl {
       val neededImplicitType = appliedType(matag.tpe.typeConstructor, tpe :: Nil)
       // infers implicit
       val neededImplicit = c.inferImplicitValue(neededImplicitType)
-      Implicit(name, implType, neededImplicit, isRecursive, tpe)
+
+      Implicit(name, implType, neededImplicit, isRecursive, isDefault, tpe)
     }
 
-    val applyParamImplicits = params.map { param => createImplicit(param.name, param.typeSignature) }
+    val applyParamImplicits = params.map { param: Symbol =>
+      val term = param.asTerm
+      println(term + " " + term.isParamWithDefault)
+      createImplicit(param.name, param.typeSignature, param.asTerm.isParamWithDefault)
+    }
     val effectiveInferredImplicits = if (hasVarArgs) {
-      val varArgsImplicit = createImplicit(applyParamImplicits.last.paramName, unapplyReturnTypes.get.last)
+      val varArgsImplicit = createImplicit(applyParamImplicits.last.paramName, unapplyReturnTypes.get.last, false)
       applyParamImplicits.init :+ varArgsImplicit
     } else applyParamImplicits
 
     // if any implicit is missing, abort
-    val missingImplicits = effectiveInferredImplicits.collect { case Implicit(_, t, impl, rec, _) if (impl == EmptyTree && !rec) => t }
+    val missingImplicits = effectiveInferredImplicits.collect { case Implicit(_, t, impl, rec, _, _) if (impl == EmptyTree && !rec) => t }
     if (missingImplicits.nonEmpty)
       c.abort(c.enclosingPosition, s"No implicit format for ${missingImplicits.mkString(", ")} available.")
 
@@ -146,8 +156,8 @@ object JsMacroImpl {
     var hasRec = false
 
     // combines all reads into CanBuildX
-    val canBuild = effectiveInferredImplicits.map {
-      case Implicit(name, t, impl, rec, tpe) =>
+    val canBuild = effectiveInferredImplicits.zipWithIndex.map {
+      case (i @ Implicit(name, t, impl, rec, isDefault, tpe), idx: Int) =>
         // inception of (__ \ name).read(impl)
         val jspathTree = Apply(
           Select(jsPathSelect, newTermName(scala.reflect.NameTransformer.encode("\\"))),
@@ -156,10 +166,29 @@ object JsMacroImpl {
 
         if (!rec) {
           val callMethod = if (t.typeConstructor <:< typeOf[Option[_]].typeConstructor) nullableMethodName else methodName
-          Apply(
+
+          val noDefault = Apply(
             Select(jspathTree, newTermName(callMethod)),
             List(impl)
           )
+
+          if (isDefault) {
+            val default = Select(Ident(companionSymbol), newTermName("apply$default$" + (idx + 1)))
+            val defaultValue = c.eval(c.Expr(default))
+
+            val pureReads = Apply(
+              Select(readsSelect, newTermName("pure")),
+              List(Literal(Constant(defaultValue)))
+            )
+
+            Apply(
+              Select(noDefault, newTermName("orElse")),
+              List(pureReads)
+            )
+          } else {
+            noDefault
+          }
+
         } else {
           hasRec = true
           if (t.typeConstructor <:< typeOf[Option[_]].typeConstructor)
@@ -188,6 +217,8 @@ object JsMacroImpl {
         List(r)
       )
     }
+
+    println("canBuild " + canBuild)
 
     // builds the final M[A] using apply method
     //val applyMethod = Ident( companionSymbol )
@@ -224,7 +255,7 @@ object JsMacroImpl {
       Select(canBuild, newTermName(method)),
       conditionalList(applyMethod, unapplyMethod)
     )
-    //println("finalTree: " + finalTree)
+    println("finalTree: " + finalTree)
 
     val importFunctionalSyntax = Import(functionalSyntaxPkg, List(ImportSelector(nme.WILDCARD, -1, null, -1)))
     if (!hasRec) {
@@ -294,10 +325,7 @@ object JsMacroImpl {
         newTermName("lazyStuff")
       )
 
-      // println("block:" + block)
-
       c.Expr[M[A]](block)
     }
   }
-
 }

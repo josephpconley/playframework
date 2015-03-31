@@ -202,6 +202,8 @@ object Json {
    */
   def reads[A] = macro JsMacroImpl.readsImpl[A]
 
+  def readsWithDefault[A] = macro JsMacroImpl.readsWithDefaultImpl[A]
+
   /**
    * Creates a Writes[T] by resolving case class fields & required implcits at COMPILE-time
    *
