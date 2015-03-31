@@ -21,7 +21,7 @@ public class FunctionalTest extends WithApplication {
     @Test
     public void testBadRoute() {
         Result result = route(fakeRequest(GET, "/xx/Kiki"));
-        assertEquals(NOT_FOUND, status(result));
+        assertEquals(NOT_FOUND, result.status());
     }
     //#bad-route
 
@@ -29,23 +29,21 @@ public class FunctionalTest extends WithApplication {
 
     private TestServer testServer() {
         Map<String, String> config = new HashMap<String, String>();
-        config.put("application.router", "javaguide.tests.Routes");
+        config.put("play.http.router", "javaguide.tests.Routes");
         return Helpers.testServer(fakeApplication(config));
     }
 
     private TestServer testServer(int port) {
         Map<String, String> config = new HashMap<String, String>();
-        config.put("application.router", "javaguide.tests.Routes");
+        config.put("play.http.router", "javaguide.tests.Routes");
         return Helpers.testServer(port, fakeApplication(config));
     }
 
     //#test-server
     @Test
     public void testInServer() {
-        running(testServer(3333), new Runnable() {
-            public void run() {
-                assertEquals(OK, WS.url("http://localhost:3333").get().get(timeout).getStatus());
-            }
+        running(testServer(3333), () -> {
+            assertEquals(OK, WS.url("http://localhost:3333").get().get(timeout).getStatus());
         });
     }
     //#test-server
@@ -53,13 +51,11 @@ public class FunctionalTest extends WithApplication {
     //#with-browser
     @Test
     public void runInBrowser() {
-        running(testServer(), HTMLUNIT, new Callback<TestBrowser>() {
-            public void invoke(TestBrowser browser) {
-                browser.goTo("/");
-                assertEquals("Welcome to Play!", browser.$("#title").getText());
-                browser.$("a").click();
-                assertEquals("/login", browser.url());
-            }
+        running(testServer(), HTMLUNIT, browser -> {
+            browser.goTo("/");
+            assertEquals("Welcome to Play!", browser.$("#title").getText());
+            browser.$("a").click();
+            assertEquals("/login", browser.url());
         });
     }
     //#with-browser

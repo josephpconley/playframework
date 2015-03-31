@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.core
 
@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import org.specs2.mutable.Specification
 import scala.concurrent.{ Await, Future, Promise }
 import scala.concurrent.duration._
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object ClosableLazySpec extends Specification {
 

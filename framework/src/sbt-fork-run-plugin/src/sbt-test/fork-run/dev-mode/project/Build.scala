@@ -34,7 +34,10 @@ object DevModeBuild {
 
     DevModeKeys.verifyReloads := {
       val expected = Def.spaceDelimited().parsed.head.toInt
-      val actual = IO.readLines(target.value / "reload.log").count(_.nonEmpty)
+      val actual = try IO.readLines(target.value / "reload.log").count(_.nonEmpty)
+      catch {
+        case _: java.io.IOException => 0
+      }
       if (expected == actual) {
         println(s"Expected and got $expected reloads")
       } else {
@@ -61,6 +64,14 @@ object DevModeBuild {
       val url = new java.net.URL("http://localhost:9000")
       val connection = url.openConnection().asInstanceOf[java.net.HttpURLConnection]
       connection.connect()
+      connection match {
+        case h: java.net.HttpURLConnection =>
+          println(s"Server gave us status ${h.getResponseCode} ${h.getResponseMessage}")
+        if (h.getResponseCode != 200)
+          throw new Exception(s"Bad response code ${h.getResponseCode} from server")
+        case _ =>
+          println(s"Not an HttpURLConnection? ${connection.getClass.getName}")
+      }
       connection.disconnect()
     } catch {
       case e: Exception =>
@@ -76,6 +87,8 @@ object DevModeBuild {
 
   val MaxAttempts = 10
   val WaitTime = 500l
+  val ConnectTimeout = 10000
+  val ReadTimeout = 10000
 
   @tailrec
   def verifyResourceContains(path: String, status: Int, assertions: Seq[String], attempts: Int): Unit = {
@@ -84,6 +97,8 @@ object DevModeBuild {
     try {
       val url = new java.net.URL("http://localhost:9000" + path)
       val conn = url.openConnection().asInstanceOf[java.net.HttpURLConnection]
+      conn.setConnectTimeout(ConnectTimeout)
+      conn.setReadTimeout(ReadTimeout)      
 
       if (status == conn.getResponseCode) {
         messages += s"Resource at $path returned $status as expected"
@@ -116,6 +131,7 @@ object DevModeBuild {
       messages.foreach(println)
     } catch {
       case e: Exception =>
+        println(s"Got exception: $e")
         if (attempts < MaxAttempts) {
           Thread.sleep(WaitTime)
           verifyResourceContains(path, status, assertions, attempts + 1)

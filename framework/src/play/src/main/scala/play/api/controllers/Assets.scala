@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package controllers
 
@@ -11,7 +11,7 @@ import java.io._
 import java.net.{ URL, URLConnection, JarURLConnection }
 import org.joda.time.format.{ DateTimeFormatter, DateTimeFormat }
 import org.joda.time.DateTimeZone
-import play.utils.{ InvalidUriEncodingException, UriEncoding }
+import play.utils.{ Resources, InvalidUriEncodingException, UriEncoding }
 import scala.concurrent.{ ExecutionContext, Promise, Future, blocking }
 import scala.util.control.NonFatal
 import scala.util.{ Success, Failure }
@@ -20,7 +20,7 @@ import java.util.regex.Pattern
 import play.api.libs.iteratee.Execution.Implicits
 import play.api.http.{ LazyHttpErrorHandler, HttpErrorHandler, ContentTypes }
 import scala.collection.concurrent.TrieMap
-import play.core.Router.ReverseRouteContext
+import play.core.routing.ReverseRouteContext
 import scala.io.Source
 import javax.inject.{ Inject, Singleton }
 
@@ -170,7 +170,7 @@ private[controllers] class AssetInfo(
           try {
             f(urlConnection)
           } finally {
-            urlConnection.getInputStream.close()
+            Resources.closeUrlConnection(urlConnection)
           }
       }.filterNot(_ == -1).map(dateFormat.print)
     }
@@ -297,7 +297,7 @@ object Assets extends AssetsBuilder(LazyHttpErrorHandler) {
     }
   }
 
-  private[controllers] def assetInfoForRequest(request: Request[_], name: String): Future[Option[(AssetInfo, Boolean)]] = {
+  private[controllers] def assetInfoForRequest(request: RequestHeader, name: String): Future[Option[(AssetInfo, Boolean)]] = {
     val gzipRequested = request.headers.get(ACCEPT_ENCODING).exists(_.split(',').exists(_.trim == "gzip"))
     assetInfo(name).map(_.map(_ -> gzipRequested))(Implicits.trampoline)
   }
@@ -348,7 +348,7 @@ class AssetsBuilder(errorHandler: HttpErrorHandler) extends Controller {
 
   private def currentTimeFormatted: String = dateFormat.print((new Date).getTime)
 
-  private def maybeNotModified(request: Request[_], assetInfo: AssetInfo, aggressiveCaching: Boolean): Option[Result] = {
+  private def maybeNotModified(request: RequestHeader, assetInfo: AssetInfo, aggressiveCaching: Boolean): Option[Result] = {
     // First check etag. Important, if there is an If-None-Match header, we MUST not check the
     // If-Modified-Since header, regardless of whether If-None-Match matches or not. This is in
     // accordance with section 14.26 of RFC2616.
@@ -408,7 +408,7 @@ class AssetsBuilder(errorHandler: HttpErrorHandler) extends Controller {
   /**
    * Generates an `Action` that serves a versioned static resource.
    */
-  def versioned(path: String, file: Asset): Action[AnyContent] = {
+  def versioned(path: String, file: Asset): Action[AnyContent] = Action.async { implicit request =>
     val f = new File(file.name)
     // We want to detect if it's a fingerprinted asset, because if it's fingerprinted, we can aggressively cache it,
     // otherwise we can't.
@@ -417,11 +417,11 @@ class AssetsBuilder(errorHandler: HttpErrorHandler) extends Controller {
       val bareFile = new File(f.getParent, f.getName.drop(requestedDigest.size + 1)).getPath
       val bareFullPath = new File(path + File.separator + bareFile).getPath
       blocking(digest(bareFullPath)) match {
-        case Some(`requestedDigest`) => at(path, bareFile, aggressiveCaching = true)
-        case _ => at(path, file.name)
+        case Some(`requestedDigest`) => assetAt(path, bareFile, aggressiveCaching = true)
+        case _ => assetAt(path, file.name, false)
       }
     } else {
-      at(path, file.name)
+      assetAt(path, file.name, false)
     }
   }
 
@@ -432,18 +432,28 @@ class AssetsBuilder(errorHandler: HttpErrorHandler) extends Controller {
    * @param file the file part extracted from the URL. May be URL encoded (note that %2F decodes to literal /).
    * @param aggressiveCaching if true then an aggressive set of caching directives will be used. Defaults to false.
    */
-  def at(path: String, file: String, aggressiveCaching: Boolean = false): Action[AnyContent] = Action.async {
-    implicit request =>
+  def at(path: String, file: String, aggressiveCaching: Boolean = false): Action[AnyContent] = Action.async { implicit request =>
+    assetAt(path, file, aggressiveCaching)
+  }
 
-      import Implicits.trampoline
-      val assetName: Option[String] = resourceNameAt(path, file)
-      val assetInfoFuture: Future[Option[(AssetInfo, Boolean)]] = assetName.map { name =>
-        assetInfoForRequest(request, name)
-      } getOrElse Future.successful(None)
+  private def assetAt(path: String, file: String, aggressiveCaching: Boolean)(implicit request: RequestHeader): Future[Result] = {
+    import Implicits.trampoline
+    val assetName: Option[String] = resourceNameAt(path, file)
+    val assetInfoFuture: Future[Option[(AssetInfo, Boolean)]] = assetName.map { name =>
+      assetInfoForRequest(request, name)
+    } getOrElse Future.successful(None)
 
-      val pendingResult: Future[Result] = assetInfoFuture.flatMap {
-        case Some((assetInfo, gzipRequested)) =>
-          val stream = assetInfo.url(gzipRequested).openStream()
+    def notFound = errorHandler.onClientError(request, NOT_FOUND, "Resource not found by Assets controller")
+
+    val pendingResult: Future[Result] = assetInfoFuture.flatMap {
+      case Some((assetInfo, gzipRequested)) =>
+        val connection = assetInfo.url(gzipRequested).openConnection()
+        // Make sure it's not a directory
+        if (Resources.isUrlConnectionADirectory(connection)) {
+          Resources.closeUrlConnection(connection)
+          notFound
+        } else {
+          val stream = connection.getInputStream
           val length = stream.available
           val resourceData = Enumerator.fromStream(stream)(Implicits.defaultExecutionContext)
 
@@ -454,16 +464,17 @@ class AssetsBuilder(errorHandler: HttpErrorHandler) extends Controller {
               result(file, length, assetInfo.mimeType, resourceData, gzipRequested, assetInfo.gzipUrl.isDefined)
             )
           })
-        case None => errorHandler.onClientError(request, NOT_FOUND, "Resource not found by Assets controller")
-      }
+        }
+      case None => notFound
+    }
 
-      pendingResult.recoverWith {
-        case e: InvalidUriEncodingException =>
-          errorHandler.onClientError(request, BAD_REQUEST, s"Invalid URI encoding for $file at $path: " + e.getMessage)
-        case NonFatal(e) =>
-          // Add a bit more information to the exception for better error reporting later
-          errorHandler.onServerError(request, new RuntimeException(s"Unexpected error while serving $file at $path: " + e.getMessage, e))
-      }
+    pendingResult.recoverWith {
+      case e: InvalidUriEncodingException =>
+        errorHandler.onClientError(request, BAD_REQUEST, s"Invalid URI encoding for $file at $path: " + e.getMessage)
+      case NonFatal(e) =>
+        // Add a bit more information to the exception for better error reporting later
+        errorHandler.onServerError(request, new RuntimeException(s"Unexpected error while serving $file at $path: " + e.getMessage, e))
+    }
   }
 
   /**

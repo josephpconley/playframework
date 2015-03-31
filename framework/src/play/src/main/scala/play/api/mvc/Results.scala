@@ -1,14 +1,13 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.api.mvc
 
+import play.api.i18n.{ MessagesApi, Lang }
 import play.api.libs.iteratee._
 import play.api.http._
 import play.api.http.HeaderNames._
 import play.api.http.HttpProtocol._
-import play.api.{ Application, Play }
-import play.api.i18n.{ Messages, Lang }
 
 import play.core.Execution.Implicits._
 import play.api.libs.concurrent.Execution.defaultContext
@@ -251,34 +250,6 @@ case class Result(header: ResponseHeader, body: Enumerator[Array[Byte]],
   def removingFromSession(keys: String*)(implicit request: RequestHeader): Result =
     withSession(new Session(session.data -- keys))
 
-  /**
-   * Sets the user's language permanently for future requests by storing it in a cookie.
-   *
-   * For example:
-   * {{{
-   * implicit val lang = Lang("fr-FR")
-   * Ok(Messages("hello.world")).withLang(lang)
-   * }}}
-   *
-   * @param lang the language to store for the user
-   * @return the new result
-   */
-  def withLang(lang: Lang)(implicit app: Application): Result =
-    Messages.messagesApiCache(app).setLang(this, lang)
-
-  /**
-   * Clears the user's language by discarding the language cookie set by withLang
-   *
-   * For example:
-   * {{{
-   * Ok(Messages("hello.world")).clearingLang
-   * }}}
-   *
-   * @return the new result
-   */
-  def clearingLang(implicit app: Application): Result =
-    discardingCookies(DiscardingCookie(Play.langCookieName))
-
   override def toString = {
     "Result(" + header + ")"
   }
@@ -331,8 +302,49 @@ object Codec {
 
 }
 
+trait LegacyI18nSupport {
+
+  /**
+   * Adds convenient methods to handle the client-side language.
+   *
+   * This class exists only for backward compatibility.
+   */
+  implicit class ResultWithLang(result: Result)(implicit messagesApi: MessagesApi) {
+
+    /**
+     * Sets the user's language permanently for future requests by storing it in a cookie.
+     *
+     * For example:
+     * {{{
+     * implicit val lang = Lang("fr-FR")
+     * Ok(Messages("hello.world")).withLang(lang)
+     * }}}
+     *
+     * @param lang the language to store for the user
+     * @return the new result
+     */
+    def withLang(lang: Lang): Result =
+      messagesApi.setLang(result, lang)
+
+    /**
+     * Clears the user's language by discarding the language cookie set by withLang
+     *
+     * For example:
+     * {{{
+     * Ok(Messages("hello.world")).clearingLang
+     * }}}
+     *
+     * @return the new result
+     */
+    def clearingLang: Result =
+      messagesApi.clearLang(result)
+
+  }
+
+}
+
 /** Helper utilities to generate results. */
-object Results extends Results {
+object Results extends Results with LegacyI18nSupport {
 
   /** Empty result, i.e. nothing to send. */
   case class EmptyContent()
@@ -379,6 +391,27 @@ trait Results {
           CONTENT_TYPE -> play.api.libs.MimeTypes.forFileName(name).getOrElse(play.api.http.ContentTypes.BINARY)
         ) ++ (if (inline) Map.empty else Map(CONTENT_DISPOSITION -> ("attachment; filename=\"" + name + "\"")))),
         Enumerator.fromFile(content) &> Enumeratee.onIterateeDone(onClose)(defaultContext)
+      )
+    }
+
+    /**
+     * Send the given resource from the given classloader.
+     *
+     * @param resource The path of the resource to load.
+     * @param classLoader The classloader to load it from, defaults to the classloader for this class.
+     * @param inline Whether it should be served as an inline file, or as an attachment.
+     * @return
+     */
+    def sendResource(resource: String, classLoader: ClassLoader = Results.getClass.getClassLoader,
+      inline: Boolean = true): Result = {
+      val stream = classLoader.getResourceAsStream(resource)
+      val fileName = resource.split('/').last
+      Result(
+        ResponseHeader(status, Map(
+          CONTENT_LENGTH -> stream.available().toString,
+          CONTENT_TYPE -> play.api.libs.MimeTypes.forFileName(fileName).getOrElse(ContentTypes.BINARY)
+        ) ++ (if (inline) Map.empty else Map(CONTENT_DISPOSITION -> ("attachment; filename=\"" + fileName + "\"")))),
+        Enumerator.fromStream(stream)(defaultContext)
       )
     }
 

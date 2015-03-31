@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.core.server
 
@@ -51,7 +51,7 @@ trait ServerStart {
     try {
       // Read settings
       val config = readServerConfigSettings(process)
-      val serverProvider = readServerProviderSetting(process, config.configuration)
+      val serverProvider = readServerProviderSetting(process, config.configuration).getOrElse(defaultServerProvider)
       // Get the party started!
       val pidFile = createPidFile(process, config.configuration)
       val appProvider = createApplicationProvider(config)
@@ -78,10 +78,10 @@ trait ServerStart {
     val configuration: Configuration = {
       process.args.headOption match {
         case None =>
-          ServerConfig.loadConfiguration(process.properties)
+          ServerConfig.loadConfiguration(process.classLoader, process.properties)
         case Some(rootDir) =>
           // rootDir will become play.server.dir setting
-          ServerConfig.loadConfiguration(process.properties, new File(rootDir))
+          ServerConfig.loadConfiguration(process.classLoader, process.properties, new File(rootDir))
       }
     }
 
@@ -120,10 +120,11 @@ trait ServerStart {
 
   /**
    * Read the ServerProvider setting from the given process's
-   * properties. If not provided, defaults to the result of
-   * `defaultServerProvider`.
+   * configuration. If not configured, returns None. If you need
+   * a ServerProvider you can may want to use the
+   * `defaultServerProvider` when this method returns None.
    */
-  def readServerProviderSetting(process: ServerProcess, configuration: Configuration): ServerProvider = {
+  def readServerProviderSetting(process: ServerProcess, configuration: Configuration): Option[ServerProvider] = {
     configuration.getString("play.server.provider").map { className =>
       val clazz = try process.classLoader.loadClass(className) catch {
         case _: ClassNotFoundException => throw ServerStartException(s"Couldn't find ServerProvider class '$className'")
@@ -133,7 +134,7 @@ trait ServerStart {
         case _: NoSuchMethodException => throw ServerStartException(s"ServerProvider class ${clazz.getName} must have a public default constructor")
       }
       ctor.newInstance().asInstanceOf[ServerProvider]
-    }.getOrElse(defaultServerProvider)
+    }
   }
 
   /**
@@ -166,8 +167,9 @@ trait ServerStart {
   def mainDevOnlyHttpsMode(
     buildLink: BuildLink,
     buildDocHandler: BuildDocHandler,
-    httpsPort: Int): ServerWithStop = {
-    mainDev(buildLink, buildDocHandler, None, Some(httpsPort))
+    httpsPort: Int,
+    httpAddress: String): ServerWithStop = {
+    mainDev(buildLink, buildDocHandler, None, Some(httpsPort), httpAddress)
   }
 
   /**
@@ -178,15 +180,18 @@ trait ServerStart {
    */
   def mainDevHttpMode(
     buildLink: BuildLink,
-    buildDocHandler: BuildDocHandler, httpPort: Int): ServerWithStop = {
-    mainDev(buildLink, buildDocHandler, Some(httpPort), Option(System.getProperty("https.port")).map(Integer.parseInt(_)))
+    buildDocHandler: BuildDocHandler,
+    httpPort: Int,
+    httpAddress: String): ServerWithStop = {
+    mainDev(buildLink, buildDocHandler, Some(httpPort), Option(System.getProperty("https.port")).map(Integer.parseInt(_)), httpAddress)
   }
 
   private def mainDev(
     buildLink: BuildLink,
     buildDocHandler: BuildDocHandler,
     httpPort: Option[Int],
-    httpsPort: Option[Int]): ServerWithStop = {
+    httpsPort: Option[Int],
+    httpAddress: String): ServerWithStop = {
     Threads.withContextClassLoader(this.getClass.getClassLoader) {
       try {
         val process = new RealServerProcess(args = Seq.empty)
@@ -194,11 +199,12 @@ trait ServerStart {
           rootDir = buildLink.projectPath,
           port = httpPort,
           sslPort = httpsPort,
+          address = httpAddress,
           mode = Mode.Dev,
           properties = process.properties
         )
         val appProvider = new ReloadableApplication(buildLink, buildDocHandler)
-        val serverProvider = readServerProviderSetting(process, config.configuration)
+        val serverProvider = readServerProviderSetting(process, config.configuration).getOrElse(defaultServerProvider)
         serverProvider.createServer(config, appProvider)
       } catch {
         case e: ExceptionInInitializerError => throw e.getCause

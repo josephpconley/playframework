@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.it.mvc
 
@@ -138,6 +138,28 @@ trait FiltersSpec extends PlaySpecification with WsTestClient with ServerIntegra
         val response = Await.result(wsUrl("/ok").get(), Duration.Inf)
         response.status must_== 500
         response.body must_== ThrowExceptionFilter.expectedText
+      }
+
+      val filterAddedHeaderKey = "CUSTOM_HEADER"
+      val filterAddedHeaderVal = "custom header val"
+
+      object MockGlobal3 extends WithFilters(new Filter {
+        def apply(next: RequestHeader => Future[Result])(request: RequestHeader): Future[Result] = {
+          next(request.copy(headers = addCustomHeader(request.headers)))
+        }
+        def addCustomHeader(originalHeaders: Headers): Headers = {
+          FakeHeaders(originalHeaders.headers :+ (filterAddedHeaderKey -> filterAddedHeaderVal))
+        }
+      }) {
+        override def onHandlerNotFound(request: RequestHeader) = {
+          Future.successful(Results.NotFound(request.headers.get(filterAddedHeaderKey).getOrElse("undefined header")))
+        }
+      }
+
+      "requests not matching a route should receive a RequestHeader modified by upstream filters" in new WithServer(FakeApplication(withGlobal = Some(MockGlobal3))) {
+        val response = Await.result(wsUrl("/not-a-real-route").get(), Duration.Inf)
+        response.status must_== 404
+        response.body must_== filterAddedHeaderVal
       }
     }
   }

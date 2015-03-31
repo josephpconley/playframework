@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.it.http
 
@@ -83,7 +83,7 @@ object ScalaResultsSpec extends PlaySpecification {
   }
 
   def withApplication[T](config: (String, Any)*)(block: => T): T = running(
-    FakeApplication(additionalConfiguration = Map(config: _*) + ("application.secret" -> "foo"))
+    FakeApplication(additionalConfiguration = Map(config: _*) + ("play.crypto.secret" -> "foo"))
   )(block)
 
   def withFooPath[T](block: => T) = withApplication("application.context" -> "/foo")(block)

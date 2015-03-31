@@ -1,10 +1,10 @@
-// Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+// Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
 
 buildInfoSettings
 
 sourceGenerators in Compile <+= buildInfo
 
-val sbtNativePackagerVersion = "0.8.0"
+val sbtNativePackagerVersion = "1.0.0-RC1"
 val sbtTwirlVersion = "1.0.4"
 
 buildInfoKeys := Seq[BuildInfoKey](
@@ -36,3 +36,7 @@ libraryDependencies ++= Seq(
 resolvers += Resolver.typesafeRepo("maven-releases")
 
 libraryDependencies += "org.scalariform" %% "scalariform" % "0.1.5-20140822-69e2e30"
+
+addSbtPlugin("com.eed3si9n" % "sbt-doge" % "0.1.5")
+
+addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.0.0")

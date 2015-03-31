@@ -1,14 +1,13 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.api.cache
 
 import play.api.test._
-import play.api.mvc.{ Action, HttpConnection, Result, Results }
-import play.api.http
+import play.api.mvc.{ HttpConnection, Result, Results }
 import play.api.libs.iteratee.{ Enumerator, Iteratee }
 
-import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 class SerializableResultSpec extends PlaySpecification {
 

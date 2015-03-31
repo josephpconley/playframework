@@ -8,7 +8,9 @@ import akka.pattern.ask
 import akka.util.Timeout
 import com.typesafe.config.{ Config, ConfigFactory }
 import java.io.File
+import java.lang.{ Runtime, Thread }
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.TimeoutException
 import play.forkrun.protocol.{ ForkConfig, Serializers }
 import play.runsupport.Reloader.{ CompileResult, PlayDevServer }
@@ -20,6 +22,8 @@ import scala.util.{ Success, Failure, Properties }
 object ForkRun {
   case object Reload
   case object Close
+
+  private val running = new AtomicBoolean(true)
 
   def main(args: Array[String]): Unit = {
     val baseDirectory = args(0)
@@ -35,13 +39,30 @@ object ForkRun {
     val forkRun = system.actorOf(props(sbt, configKey, runArgs, log), "fork-run")
 
     log.info("Setting up Play fork run ... (use Ctrl+D to cancel)")
-
+    registerShutdownHook(log, system, forkRun)
     waitForStop()
 
-    log.info("Stopping Play fork run ...")
-    forkRun ! Close
-    try system.awaitTermination(30.seconds)
-    catch { case _: TimeoutException => System.exit(1) }
+    doShutdown(log, system, forkRun)
+  }
+
+  def doShutdown(log: Logger, system: ActorSystem, forkRun: ActorRef): Unit = {
+    if (running.compareAndSet(true, false)) {
+      log.info("Stopping Play fork run ...")
+      forkRun ! Close
+      try system.awaitTermination(30.seconds)
+      catch { case _: TimeoutException => System.exit(1) }
+    } else {
+      log.info("Play fork run already stopped ...")
+    }
+  }
+
+  def registerShutdownHook(log: Logger, system: ActorSystem, forkRun: ActorRef): Unit = {
+    Runtime.getRuntime().addShutdownHook(new Thread {
+      override def run(): Unit = {
+        log.info("JVM exiting, shutting down Play fork run ...")
+        doShutdown(log, system, forkRun)
+      }
+    })
   }
 
   def startServer(config: ForkConfig, args: Seq[String], notifyStart: InetSocketAddress => Unit, reloadCompile: () => CompileResult, log: Logger): PlayDevServer = {
@@ -72,10 +93,12 @@ object ForkRun {
       docsClasspath = config.docsClasspath,
       docsJar = config.docsJar,
       defaultHttpPort = config.defaultHttpPort,
+      defaultHttpAddress = config.defaultHttpAddress,
       projectPath = config.projectDirectory,
       devSettings = config.devSettings,
       args = args,
-      runSbtTask = runSbtTask
+      runSbtTask = runSbtTask,
+      mainClassName = config.mainClass
     )
 
     println()
@@ -86,16 +109,17 @@ object ForkRun {
   }
 
   def sendStart(sbt: ActorRef, config: ForkConfig, args: Seq[String]): InetSocketAddress => Unit = { address =>
-    val url = serverUrl(args, config.defaultHttpPort, address)
+    val url = serverUrl(args, config.defaultHttpPort, config.defaultHttpAddress, address)
     sbt ! SbtClient.Execute(s"${config.notifyKey} $url")
   }
 
   // reparse args to support https urls
-  def serverUrl(args: Seq[String], defaultHttpPort: Int, address: InetSocketAddress): String = {
-    val (properties, httpPort, httpsPort) = Reloader.filterArgs(args, defaultHttpPort)
-    if (httpPort.isDefined) s"http://localhost:${httpPort.get}"
-    else if (httpsPort.isDefined) s"https://localhost:${httpsPort.get}"
-    else s"http://localhost:${address.getPort}"
+  def serverUrl(args: Seq[String], defaultHttpPort: Int, defaultHttpAddress: String, address: InetSocketAddress): String = {
+    val (properties, httpPort, httpsPort, httpAddress) = Reloader.filterArgs(args, defaultHttpPort, defaultHttpAddress)
+    val host = if (httpAddress == "0.0.0.0") "localhost" else httpAddress
+    if (httpPort.isDefined) s"http://$host:${httpPort.get}"
+    else if (httpsPort.isDefined) s"https://$host:${httpsPort.get}"
+    else s"http://$host:${address.getPort}"
   }
 
   def askForReload(actor: ActorRef)(implicit timeout: Timeout): () => CompileResult = () => {

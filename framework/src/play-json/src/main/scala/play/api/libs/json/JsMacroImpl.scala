@@ -10,18 +10,18 @@ import language.experimental.macros
 object JsMacroImpl {
 
   def formatImpl[A: c.WeakTypeTag](c: Context): c.Expr[Format[A]] =
-    macroImpl[A, Format](c, "format", "inmap", reads = true, writes = true)
+    macroImpl[A, Format](c, "format", "inmap", reads = true, writes = true, readDefault = false)
 
   def readsImpl[A: c.WeakTypeTag](c: Context): c.Expr[Reads[A]] =
-    macroImpl[A, Reads](c, "read", "map", reads = true, writes = false)
+    macroImpl[A, Reads](c, "read", "map", reads = true, writes = false, readDefault = false)
 
   def readsWithDefaultImpl[A: c.WeakTypeTag](c: Context): c.Expr[Reads[A]] =
-    macroImpl[A, Reads](c, "read", "map", reads = true, writes = false)
+    macroImpl[A, Reads](c, "read", "map", reads = true, writes = false, readDefault = true)
 
   def writesImpl[A: c.WeakTypeTag](c: Context): c.Expr[Writes[A]] =
-    macroImpl[A, Writes](c, "write", "contramap", reads = false, writes = true)
+    macroImpl[A, Writes](c, "write", "contramap", reads = false, writes = true, readDefault = false)
 
-  def macroImpl[A, M[_]](c: Context, methodName: String, mapLikeMethod: String, reads: Boolean, writes: Boolean)(implicit atag: c.WeakTypeTag[A], matag: c.WeakTypeTag[M[A]]): c.Expr[M[A]] = {
+  def macroImpl[A, M[_]](c: Context, methodName: String, mapLikeMethod: String, reads: Boolean, writes: Boolean, readDefault: Boolean)(implicit atag: c.WeakTypeTag[A], matag: c.WeakTypeTag[M[A]]): c.Expr[M[A]] = {
 
     val nullableMethodName = s"${methodName}Nullable"
     val lazyMethodName = s"lazy${methodName.capitalize}"
@@ -57,8 +57,6 @@ object JsMacroImpl {
       case Some(s) => s.asMethod
     }
 
-    println("effectiveUnapply " + effectiveUnapply.returnType)
-
     val unapplyReturnTypes: Option[List[Type]] = effectiveUnapply.returnType match {
       case TypeRef(_, _, Nil) => {
         c.abort(c.enclosingPosition, s"Unapply of ${companionSymbol} has no parameters. Are you using an empty case class?")
@@ -78,7 +76,7 @@ object JsMacroImpl {
       case _ => None
     }
 
-    println("Unapply return type:" + unapplyReturnTypes)
+    //println("Unapply return type:" + unapplyReturnTypes)
 
     val applies =
       companionType.declaration(stringToTermName("apply")) match {
@@ -172,7 +170,8 @@ object JsMacroImpl {
             List(impl)
           )
 
-          if (isDefault) {
+          if (isDefault && readDefault) {
+            println(companionSymbol)
             val default = Select(Ident(companionSymbol), newTermName("apply$default$" + (idx + 1)))
             val defaultValue = c.eval(c.Expr(default))
 
@@ -255,7 +254,7 @@ object JsMacroImpl {
       Select(canBuild, newTermName(method)),
       conditionalList(applyMethod, unapplyMethod)
     )
-    println("finalTree: " + finalTree)
+    //println("finalTree: " + finalTree)
 
     val importFunctionalSyntax = Import(functionalSyntaxPkg, List(ImportSelector(nme.WILDCARD, -1, null, -1)))
     if (!hasRec) {
@@ -325,7 +324,10 @@ object JsMacroImpl {
         newTermName("lazyStuff")
       )
 
+      // println("block:" + block)
+
       c.Expr[M[A]](block)
     }
   }
+
 }

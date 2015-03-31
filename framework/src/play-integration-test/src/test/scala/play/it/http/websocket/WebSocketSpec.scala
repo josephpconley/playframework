@@ -1,7 +1,9 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.it.http.websocket
+
+import java.nio.charset.Charset
 
 import play.api.test._
 import play.api.Application
@@ -14,9 +16,11 @@ import org.jboss.netty.handler.codec.http.websocketx._
 import org.specs2.matcher.Matcher
 import akka.actor.{ ActorRef, PoisonPill, Actor, Props }
 import play.mvc.WebSocket.{ Out, In }
-import play.core.Router.HandlerDef
+import play.core.routing.HandlerDef
 import java.util.concurrent.atomic.AtomicReference
 import org.jboss.netty.buffer.ChannelBuffers
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object NettyWebSocketSpec extends WebSocketSpec with NettyIntegrationSpecification
 object AkkaHttpWebSocketSpec extends WebSocketSpec with AkkaHttpIntegrationSpecification
@@ -44,6 +48,10 @@ trait WebSocketSpec extends PlaySpecification with WsTestClient with ServerInteg
       })
     }
     await(innerResult.future)
+  }
+
+  def pongFrame(matcher: Matcher[String]): Matcher[WebSocketFrame] = beLike {
+    case t: PongWebSocketFrame => t.getBinaryData.toString(Charset.forName("utf-8")) must matcher
   }
 
   def textFrame(matcher: Matcher[String]): Matcher[WebSocketFrame] = beLike {
@@ -133,7 +141,7 @@ trait WebSocketSpec extends PlaySpecification with WsTestClient with ServerInteg
         WebSocket.using[String] { req =>
           (getChunks[String](Nil, consumed.success _), Enumerator.empty)
         }
-    }.pendingUntilAkkaHttpFixed
+    }.pendingUntilAkkaHttpFixed // All tests in this class are waiting on https://github.com/akka/akka/issues/16848
 
     "allow sending messages" in allowSendingMessages { _ =>
       messages =>
@@ -235,6 +243,41 @@ trait WebSocketSpec extends PlaySpecification with WsTestClient with ServerInteg
       }
     }.pendingUntilAkkaHttpFixed
 
+    "respond to pings" in {
+      withServer(app => WebSocket.using[String] { req =>
+        (Iteratee.head, Enumerator.empty)
+      }) {
+        val frames = runWebSocket { (in, out) =>
+          Enumerator[WebSocketFrame](
+            new PingWebSocketFrame(binaryBuffer("hello")),
+            new CloseWebSocketFrame(1000, "")
+          ) |>> out
+          in |>>> Iteratee.getChunks[WebSocketFrame]
+        }
+        frames must contain(exactly(
+          pongFrame(be_==("hello")),
+          closeFrame()
+        ))
+      }
+    }.pendingUntilAkkaHttpFixed
+
+    "not respond to pongs" in {
+      withServer(app => WebSocket.using[String] { req =>
+        (Iteratee.head, Enumerator.empty)
+      }) {
+        val frames = runWebSocket { (in, out) =>
+          Enumerator[WebSocketFrame](
+            new PongWebSocketFrame(),
+            new CloseWebSocketFrame(1000, "")
+          ) |>> out
+          in |>>> Iteratee.getChunks[WebSocketFrame]
+        }
+        frames must contain(exactly(
+          closeFrame()
+        ))
+      }
+    }.pendingUntilAkkaHttpFixed
+
     "allow handling a WebSocket with an actor" in {
 
       "allow consuming messages" in allowConsumingMessages { implicit app =>
@@ -302,8 +345,8 @@ trait WebSocketSpec extends PlaySpecification with WsTestClient with ServerInteg
 
     "allow handling a WebSocket in java" in {
 
-      import play.core.Router.HandlerInvokerFactory
-      import play.core.Router.HandlerInvokerFactory._
+      import play.core.routing.HandlerInvokerFactory
+      import play.core.routing.HandlerInvokerFactory._
       import play.mvc.{ WebSocket => JWebSocket, Results => JResults }
       import play.libs.F
 

@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Using the Play console
 
 ## Launching the console
@@ -58,7 +58,7 @@ Type `console` to enter the interactive Scala console, which allows you to test 
 [my-first-app] $ console
 ```
 
-To start application inside scala console (e.g to access database):
+To start application inside scala console (e.g. to access database):
 ```bash
 scala> new play.core.StaticApplication(new java.io.File("."))
 ```

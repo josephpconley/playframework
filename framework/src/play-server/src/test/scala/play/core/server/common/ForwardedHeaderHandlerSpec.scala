@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.core.server.common
 
@@ -101,10 +101,7 @@ class ForwardedHeaderHandlerSpec extends Specification {
         case _ => None
       }
 
-      new Headers {
-        override protected val data: Seq[(String, Seq[String])] = s.split("\n")
-          .flatMap { split(_, ":\\s*") }.groupBy(_._1).mapValues(_.map(_._2).toSeq).toSeq
-      }
+      new Headers(s.split("\n").flatMap(split(_, ":\\s*")))
     }
   }
 }

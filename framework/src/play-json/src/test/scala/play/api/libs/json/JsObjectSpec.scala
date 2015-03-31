@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.api.libs.json
 
@@ -9,7 +9,6 @@ import play.api.libs.json.Json._
 object JsObjectSpec extends Specification {
 
   "JsObject.deepMerge" should {
-
     "not fail when the objects are empty" in {
       Json.obj().deepMerge(Json.obj()) must beEqualTo(Json.obj())
     }

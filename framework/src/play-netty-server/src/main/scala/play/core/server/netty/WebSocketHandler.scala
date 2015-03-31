@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.core.server.netty
 
@@ -109,6 +109,9 @@ private[server] trait WebSocketHandler {
             // ping!
             case (frame: PingWebSocketFrame, _) =>
               ctx.getChannel.write(new PongWebSocketFrame(frame.getBinaryData))
+
+            // pong!
+            case (frame: PongWebSocketFrame, _) => // ignore
 
             // unacceptable frame
             case (frame: WebSocketFrame, _) =>

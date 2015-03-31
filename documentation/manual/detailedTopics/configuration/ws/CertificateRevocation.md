@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Configuring Certificate Revocation
 
 Certificate Revocation in JSSE can be done through two means: certificate revocation lists (CRLs) and OCSP.
@@ -19,7 +19,7 @@ java -Dcom.sun.security.enableCRLDP=true -Dcom.sun.net.ssl.checkRevocation=true
 After doing the above, you can enable certificate revocation in the client:
 
 ```
-ws.ssl.checkRevocation = true
+play.ws.ssl.checkRevocation = true
 ```
 
 Setting `checkRevocation` will set the internal `ocsp.enable` security property automatically:
@@ -35,7 +35,7 @@ And this will set OCSP checking when making HTTPS requests.
 Or, if you wish to use a static CRL list, you can define a list of URLs:
 
 ```
-ws.ssl.revocationLists = [ "http://example.com/crl" ]
+play.ws.ssl.revocationLists = [ "http://example.com/crl" ]
 ```
 
 ## Debugging
@@ -43,7 +43,10 @@ ws.ssl.revocationLists = [ "http://example.com/crl" ]
 To test certificate revocation is enabled, set the following options:
 
 ```
-ws.ssl.debug = [ "certpath", "ocsp" ]
+play.ws.ssl.debug = {
+ certpath = true
+ ocsp = true
+}
 ```
 
 And you should see something like the following output:

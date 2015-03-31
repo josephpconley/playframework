@@ -6,6 +6,10 @@ import play.api.libs.json.Json._
 
 case class UserProfile(id: Int, name: String, cn: String = "US")
 
+object UserProfile {
+
+}
+
 object JoeSpec extends Specification {
 
   "readsWithDefault" should {
@@ -15,6 +19,8 @@ object JoeSpec extends Specification {
 
       val jsonUser = Json.fromJson[UserProfile](Json.obj("name" -> "toto", "id" -> 45))
       jsonUser must beEqualTo(JsSuccess(UserProfile(45, "toto")))
+
+      (1 + 1) mustEqual 2
     }
   }
 }

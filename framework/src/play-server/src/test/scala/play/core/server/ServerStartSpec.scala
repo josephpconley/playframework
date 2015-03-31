@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.core.server
 
@@ -89,6 +89,8 @@ object ServerStartSpec extends Specification {
       stopCallCount += 1
       super.stop()
     }
+    def httpPort = None
+    def httpsPort = None
   }
 
   class FakeServerProvider extends ServerProvider {
@@ -175,55 +177,54 @@ object ServerStartSpec extends Specification {
 
   "serverStart.readServerProviderSetting" should {
 
-    "return default by default" in withTempDir { tempDir =>
-      val defaultServerProvider = new FakeServerProvider
-      val serverStart = new FakeServerStart(defaultServerProvider)
+    "return None if no configuration provided" in withTempDir { tempDir =>
+      val serverStart = new FakeServerStart(new FakeServerProvider)
       val process = new FakeServerProcess()
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
-      serverStart.readServerProviderSetting(process, configuration) must be(defaultServerProvider)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
+      serverStart.readServerProviderSetting(process, configuration) must beNone
     }
     "create a custom provider when the server.provider property is supplied" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val serverProviderClass = classOf[FakeServerProvider]
       val process = new FakeServerProcess(
-        propertyMap = Map("server.provider" -> serverProviderClass.getName)
+        propertyMap = Map("play.server.provider" -> serverProviderClass.getName)
       )
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
-      serverStart.readServerProviderSetting(process, configuration).getClass must_== serverProviderClass
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
+      serverStart.readServerProviderSetting(process, configuration).map(_.getClass) must beSome(serverProviderClass)
     }
-    "fail if the class doesn't exist" in withTempDir { tempDir =>
+    "fail if the configured class doesn't exist" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val process = new FakeServerProcess(
-        propertyMap = Map("server.provider" -> "garble.barble.Phnarble")
+        propertyMap = Map("play.server.provider" -> "garble.barble.Phnarble")
       )
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       startResult(serverStart.readServerProviderSetting(process, configuration)) must_== Left("Couldn't find ServerProvider class 'garble.barble.Phnarble'")
     }
-    "fail if the class doesn't implement ServerProvider" in withTempDir { tempDir =>
+    "fail if the configured class doesn't implement ServerProvider" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val serverProvider = classOf[String].getName
       val process = new FakeServerProcess(
-        propertyMap = Map("server.provider" -> serverProvider)
+        propertyMap = Map("play.server.provider" -> serverProvider)
       )
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       startResult(serverStart.readServerProviderSetting(process, configuration)) must_== Left(s"Class $serverProvider must implement ServerProvider interface")
     }
     "fail if the class doesn't have a default constructor" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val serverProvider = classOf[InvalidCtorFakeServerProvider].getName
       val process = new FakeServerProcess(
-        propertyMap = Map("server.provider" -> serverProvider)
+        propertyMap = Map("play.server.provider" -> serverProvider)
       )
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       startResult(serverStart.readServerProviderSetting(process, configuration)) must_== Left(s"ServerProvider class $serverProvider must have a public default constructor")
     }
     "fail if the class has a private constructor" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val serverProvider = classOf[PrivateCtorFakeServer].getName
       val process = new FakeServerProcess(
-        propertyMap = Map("server.provider" -> serverProvider)
+        propertyMap = Map("play.server.provider" -> serverProvider)
       )
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       startResult(serverStart.readServerProviderSetting(process, configuration)) must_== Left(s"ServerProvider class $serverProvider must have a public default constructor")
     }
 
@@ -235,7 +236,7 @@ object ServerStartSpec extends Specification {
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val pid = "12345"
       val process = new FakeServerProcess(pid = Some(pid))
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       val pidFile = new File(tempDir, "RUNNING_PID")
       configuration.getString("play.server.dir") must_== Some(tempDir.getAbsolutePath)
       configuration.getString("play.server.pidfile.path") must_== Some(pidFile.getAbsolutePath)
@@ -250,13 +251,13 @@ object ServerStartSpec extends Specification {
     "fail to create a pid file if it can't get the process pid" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val process = new FakeServerProcess(pid = None)
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       startResult(serverStart.createPidFile(process, configuration)) must_== Left("Couldn't determine current process's pid")
     }
     "fail to create a pid file if the pid file already exists" in withTempDir { tempDir =>
       val serverStart = new FakeServerStart(new FakeServerProvider)
       val process = new FakeServerProcess(pid = Some("123"))
-      val configuration = ServerConfig.loadConfiguration(process.properties, tempDir)
+      val configuration = ServerConfig.loadConfiguration(process.classLoader, process.properties, tempDir)
       Files.write("x".getBytes, new File(tempDir, "RUNNING_PID"))
       startResult(serverStart.createPidFile(process, configuration)) must_== Left(s"This application is already running (Or delete ${tempDir.getAbsolutePath}/RUNNING_PID file).")
     }

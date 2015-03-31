@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package com.typesafe.play.docs.sbtplugin
 
@@ -11,7 +11,7 @@ import org.pegdown.ast._
 import org.pegdown.ast.Node
 import org.pegdown.plugins.{ ToHtmlSerializerPlugin, PegDownPlugins }
 import org.pegdown._
-import play.sbtplugin.Colors
+import play.sbt.Colors
 import play.doc._
 import sbt.{ FileRepository => _, _ }
 import sbt.Keys._

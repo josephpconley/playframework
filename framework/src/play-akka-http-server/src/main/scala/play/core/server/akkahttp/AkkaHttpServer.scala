@@ -5,7 +5,7 @@ import akka.http.Http
 import akka.http.model._
 import akka.http.model.headers.{ `Content-Length`, `Content-Type` }
 import akka.pattern.ask
-import akka.stream.FlowMaterializer
+import akka.stream.ActorFlowMaterializer
 import akka.stream.scaladsl._
 import akka.util.{ ByteString, Timeout }
 import com.typesafe.config.{ ConfigFactory, Config }
@@ -27,7 +27,7 @@ import scala.util.{ Failure, Success, Try }
 /**
  * Starts a Play server using Akka HTTP.
  */
-class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) extends Server with ServerWithStop {
+class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) extends Server {
 
   import AkkaHttpServer._
 
@@ -41,20 +41,23 @@ class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) ext
   // its unusual ClassLoader.
   val userConfig = ConfigFactory.load().getObject("play.akka-http-server").toConfig
   implicit val system = ActorSystem(userConfig.getString("actor-system"), userConfig)
-  implicit val materializer = FlowMaterializer()
+  implicit val materializer = ActorFlowMaterializer()
 
   val address: InetSocketAddress = {
-    // Bind the socket
-    val binding: Http.ServerBinding = {
-      import java.util.concurrent.TimeUnit.MILLISECONDS
+    // Listen for incoming connections and handle them with the `handleRequest` method.
+
+    // TODO: pass in Inet.SocketOption, ServerSettings and LoggerAdapter params?
+    val serverSource: Source[Http.IncomingConnection, Future[Http.ServerBinding]] =
       Http().bind(interface = config.address, port = config.port.get)
+
+    val connectionSink: Sink[Http.IncomingConnection, _] = Sink.foreach { connection: Http.IncomingConnection =>
+      connection.handleWithAsyncHandler(handleRequest(connection.remoteAddress, _))
     }
-    val incomingHandler = ForeachSink { incoming: Http.IncomingConnection =>
-      incoming.handleWith(Flow[HttpRequest].mapAsync(handleRequest(incoming.remoteAddress, _)))
-    }
-    val mm: MaterializedMap = binding.connections.to(incomingHandler).run()
+
+    val bindingFuture: Future[Http.ServerBinding] = serverSource.to(connectionSink).run()
+
     val bindTimeout = Duration(userConfig.getDuration("http-bind-timeout", MILLISECONDS), MILLISECONDS)
-    Await.result(binding.localAddress(mm), bindTimeout)
+    Await.result(bindingFuture, bindTimeout).localAddress
   }
 
   // Each request needs an id
@@ -146,7 +149,7 @@ class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) ext
     val resultFuture: Future[Result] = requestBodyEnumerator |>>> actionIteratee
     val responseFuture: Future[HttpResponse] = resultFuture.flatMap { result =>
       val cleanedResult: Result = ServerResultUtils.cleanFlashCookie(taggedRequestHeader, result)
-      modelConversion.convertResult(cleanedResult, request.protocol)
+      modelConversion.convertResult(taggedRequestHeader, cleanedResult, request.protocol)
     }
     responseFuture
   }
@@ -159,7 +162,7 @@ class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) ext
 
   override def stop() {
 
-    appProvider.get.foreach(Play.stop)
+    appProvider.current.foreach(Play.stop)
 
     try {
       super.stop()
@@ -185,9 +188,12 @@ class AkkaHttpServer(config: ServerConfig, appProvider: ApplicationProvider) ext
 
   override lazy val mainAddress = {
     // TODO: Handle HTTPS here, like in NettyServer
-    new InetSocketAddress(config.address, config.port.get)
+    address
   }
 
+  def httpPort = Some(address.getPort)
+
+  def httpsPort = None
 }
 
 object AkkaHttpServer extends ServerStart {
@@ -199,11 +205,12 @@ object AkkaHttpServer extends ServerStart {
    */
   val defaultServerProvider = new AkkaHttpServerProvider
 
+  implicit val provider = defaultServerProvider
 }
 
 /**
  * Knows how to create an AkkaHttpServer.
  */
-private[akkahttp] class AkkaHttpServerProvider extends ServerProvider {
+class AkkaHttpServerProvider extends ServerProvider {
   def createServer(config: ServerConfig, appProvider: ApplicationProvider) = new AkkaHttpServer(config, appProvider)
 }

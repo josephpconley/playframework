@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Starting your application in production mode
 
 We have seen how to run a Play application in development mode, however the `run` command should not be used to run an application in production mode.  When using `run`, on each request, Play checks with SBT to see if any files have changed, and this may have significant performance impacts on your application.
@@ -14,7 +14,7 @@ Before you run your application in production mode, you need to generate an appl
 The easiest way to start an application in production mode is to use the `start` command from the Play console. This requires a Play installation on the server.
 
 ```bash
-[my-first-app] $ start -Dapplication.secret=abcdefghijk
+[my-first-app] $ start -Dplay.crypto.secret=abcdefghijk
 ```
 
 
@@ -31,7 +31,7 @@ If you type `Ctrl+C`, you will kill both JVMs: the Play console and the forked P
 You can also use `activator start` at your OS command prompt to start the server without first starting the Play console:
 
 ```bash
-$ activator start -Dapplication.secret="abcdefghijk"
+$ activator start -Dplay.crypto.secret="abcdefghijk"
 ```
 
 ## Using the stage task
@@ -50,7 +50,7 @@ This cleans and compiles your application, retrieves the required dependencies a
 For example to start an application of the project `my-first-app` from the project folder you can:
 
 ```bash
-$ target/universal/stage/bin/my-first-app -Dapplication.secret=abcdefghijk
+$ target/universal/stage/bin/my-first-app -Dplay.crypto.secret=abcdefghijk
 ```
 
 You can also specify a different configuration file for a production environment, from the command line:

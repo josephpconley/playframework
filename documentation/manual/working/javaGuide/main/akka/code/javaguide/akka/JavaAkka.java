@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package javaguide.akka;
 
@@ -86,11 +86,7 @@ public class JavaAkka extends WithApplication {
         //#schedule-code
         system.scheduler().scheduleOnce(
                 Duration.create(10, TimeUnit.MILLISECONDS),
-                new Runnable() {
-                    public void run() {
-                        file.delete();
-                    }
-                },
+                () -> file.delete(),
                 system.dispatcher()
         );
         //#schedule-code

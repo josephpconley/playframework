@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2014 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Dependency Injection
 
 Dependency injection is a way that you can separate your components so that they are not directly dependent on each other, rather, they get injected into each other.
@@ -27,11 +27,8 @@ Sometimes you may have a component that holds some state, such as a cache, or a 
 
 Some components may need to be cleaned up when Play shuts down, for example, to stop thread pools.  Play provides an [ApplicationLifecycle](api/java/play/inject/ApplicationLifecycle.html) component that can be used to register hooks to stop your component when Play shuts down:
 
-Java
-: @[cleanup](code/javaguide/advanced/di/MessageQueueConnection.java)
+@[cleanup](code/javaguide/advanced/di/MessageQueueConnection.java)
 
-Java 8
-: @[cleanup](java8code/java8guide/advanced/di/MessageQueueConnection.java)
 
 The `ApplicationLifecycle` will stop all components in reverse order from when they were created.  This means any components that you depend on can still safely be used in your components stop hook, since because you depend on them, they must have been created before your component was, and therefore won't be stopped until after your component is stopped.
 
@@ -61,6 +58,14 @@ In some more complex situations, you may want to provide more complex bindings, 
 To register this module with Play, append it's fully qualified class name to the `play.modules.enabled` list in `application.conf`:
 
     play.modules.enabled += "modules.HelloModule"
+
+You can also provide your own application loader:
+
+@[guice-app-loader](code/javaguide/advanced/di/guice/CustomApplicationLoader.java)
+
+You then need to specifiy it in `play.application.loader`:
+
+    play.application.loader := "modules.CustomApplicationLoader"
 
 ### Play libraries
 

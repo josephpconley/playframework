@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Integrating with Akka
 
 [Akka](http://akka.io/) uses the Actor Model to raise the abstraction level and provide a better platform to build correct concurrent and scalable applications. For fault-tolerance it adopts the ‘Let it crash’ model, which has been used with great success in the telecoms industry to build applications that self-heal - systems that never stop. Actors also provide the abstraction for transparent distribution and the basis for truly scalable and fault-tolerant applications.
@@ -51,7 +51,7 @@ A few things to notice:
 The default actor system configuration is read from the Play application configuration file. For example, to configure the default dispatcher of the application actor system, add these lines to the `conf/application.conf` file:
 
 ```
-akka.default-dispatcher.fork-join-executor.pool-size-max =64
+akka.default-dispatcher.fork-join-executor.parallelism-max =64
 akka.actor.debug.receive = on
 ```
 

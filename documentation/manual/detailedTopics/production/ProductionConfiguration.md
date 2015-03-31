@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Additional configuration
 
 There are a number of different types of configuration that you can configure in production.  The three mains types are:
@@ -55,7 +55,7 @@ $ /path/to/bin/<project-name> -Dconfig.url=http://conf.mycompany.com/conf/prod.c
 Sometimes you don't want to specify another complete configuration file, but just override a bunch of specific keys. You can do that by specifying then as Java System properties:
 
 ```
-$ /path/to/bin/<project-name> -Dapplication.secret=abcdefghijk -Ddb.default.password=toto
+$ /path/to/bin/<project-name> -Dplay.crypto.secret=abcdefghijk -Ddb.default.password=toto
 ```
 
 ### Using environment variables

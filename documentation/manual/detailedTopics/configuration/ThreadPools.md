@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com> -->
+<!--- Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com> -->
 # Understanding Play thread pools
 
 Play framework is, from the bottom up, an asynchronous web framework.  Streams are handled asynchronously using iteratees.  Thread pools in Play are tuned to use fewer threads than in traditional web frameworks, since IO in play-core never blocks.
@@ -99,12 +99,7 @@ Java `ThreadLocal`s, along with the correct context `ClassLoader`, are propagate
 In the example below, a user thread pool is wrapped to create a new `ExecutionContext` that propagates thread locals correctly.
 
 @[async-explicit-ec-imports](../../working/javaGuide/main/async/code/javaguide/async/controllers/Application.java)
-
-Java 8
-: @[async-explicit-ec](../../working/javaGuide/main/async/java8code/java8guide/async/controllers/Application.java)
-
-Java
-: @[async-explicit-ec](../../working/javaGuide/main/async/code/javaguide/async/controllers/Application.java)
+@[async-explicit-ec](../../working/javaGuide/main/async/code/javaguide/async/controllers/Application.java)
 
 ## Best practices
 
@@ -127,6 +122,13 @@ In this profile, you would simply use the default execution context everywhere, 
 @[highly-synchronous](code/ThreadPools.scala)
 
 This profile is recommended for Java applications that do synchronous IO, since it is harder in Java to dispatch work to other threads.
+
+Note that we use the same value for `parallelism-min` and `parallelism-max`. The reason is that the number of threads is defined by the following formulas : 
+
+>base-nb-threads = nb-processors * parallelism-factor  
+ parallelism-min <= actual-nb-threads <= parallelism-max
+
+So if you don't have enough available processors, you will never be able to reach the `parallelism-max` setting.
 
 ### Many specific thread pools
 

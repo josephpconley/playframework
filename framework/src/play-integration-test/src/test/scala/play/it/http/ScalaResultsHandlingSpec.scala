@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.it.http
 
@@ -10,8 +10,8 @@ import play.api.libs.ws._
 import play.api.libs.iteratee._
 import play.it._
 import scala.util.{ Failure, Success, Try }
-
 import play.api.libs.concurrent.Execution.{ defaultContext => ec }
+import play.api.http.Status
 
 object NettyScalaResultsHandlingSpec extends ScalaResultsHandlingSpec with NettyIntegrationSpecification
 object AkkaHttpScalaResultsHandlingSpec extends ScalaResultsHandlingSpec with AkkaHttpIntegrationSpecification
@@ -228,17 +228,6 @@ trait ScalaResultsHandlingSpec extends PlaySpecification with WsTestClient with 
         response.body must beLeft("")
       }
 
-    "return a 400 error on invalid URI" in withServer(
-      Results.Ok
-    ) { port =>
-        val response = BasicHttpClient.makeRequests(port)(
-          BasicRequest("GET", "/[", "HTTP/1.1", Map(), "")
-        )(0)
-
-        response.status must_== 400
-        response.body must beLeft
-      }
-
     "not send empty chunks before the end of the enumerator stream" in makeRequest(
       Results.Ok.chunked(Enumerator("foo", "", "bar"))
     ) { response =>
@@ -283,6 +272,77 @@ trait ScalaResultsHandlingSpec extends PlaySpecification with WsTestClient with 
       }
     }
 
-  }
+    "not have a message body even when a 204 response with a non-empty body is returned" in withServer(
+      Result(header = ResponseHeader(NO_CONTENT),
+        body = Enumerator("foo") &> Enumeratee.map[String](_.getBytes)(ec),
+        connection = HttpConnection.KeepAlive)
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("PUT", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+      }
 
+    "not have a message body even when a 304 response with a non-empty body is returned" in withServer(
+      Result(header = ResponseHeader(NOT_MODIFIED),
+        body = Enumerator("foo") &> Enumeratee.map[String](_.getBytes)(ec),
+        connection = HttpConnection.KeepAlive)
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("PUT", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+      }
+
+    "not have a message body, nor Content-Length, when a 204 response is returned" in withServer(
+      Results.NoContent
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("PUT", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+        response.headers.get(CONTENT_LENGTH) must beNone
+      }
+
+    "not have a message body, but may have a Content-Length, when a 204 response with an explicit Content-Length is returned" in withServer(
+      Results.NoContent.withHeaders("Content-Length" -> "0")
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("PUT", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+        response.headers.get(CONTENT_LENGTH) must beOneOf(None, Some("0")) // Both header values are valid
+      }
+
+    "not have a message body, nor a Content-Length, when a 304 response is returned" in withServer(
+      Results.NotModified
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("GET", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+        response.headers.get(CONTENT_LENGTH) must beNone
+      }
+
+    "not have a message body, but may have a Content-Length, when a 304 response with an explicit Content-Length is returned" in withServer(
+      Results.NotModified.withHeaders("Content-Length" -> "0")
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("GET", "/", "HTTP/1.1", Map(), "")
+        )(0)
+        response.body must beLeft("")
+        response.headers.get(CONTENT_LENGTH) must beOneOf(None, Some("0")) // Both header values are valid
+      }
+
+    "return a 500 response if a forbidden character is used in a response's header field" in withServer(
+      // both colon and space characters are not allowed in a header's field name 
+      Results.Ok.withHeaders("BadFieldName: " -> "SomeContent")
+    ) { port =>
+        val response = BasicHttpClient.makeRequests(port)(
+          BasicRequest("GET", "/", "HTTP/1.1", Map(), "")
+        ).apply(0)
+        response.status must_== Status.INTERNAL_SERVER_ERROR
+        (response.headers - (CONTENT_LENGTH)) must be(Map.empty)
+      }.pendingUntilAkkaHttpFixed // https://github.com/akka/akka/issues/16988
+  }
 }

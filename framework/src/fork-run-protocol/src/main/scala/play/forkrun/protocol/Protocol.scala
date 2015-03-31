@@ -15,13 +15,15 @@ case class ForkConfig(
   docsJar: Option[File],
   devSettings: Seq[(String, String)],
   defaultHttpPort: Int,
+  defaultHttpAddress: String,
   watchService: ForkConfig.WatchService,
   monitoredFiles: Seq[String],
   targetDirectory: File,
   pollInterval: Int,
   notifyKey: String,
   reloadKey: String,
-  compileTimeout: Long)
+  compileTimeout: Long,
+  mainClass: String)
 
 object ForkConfig {
   import play.runsupport._

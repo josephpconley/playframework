@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 Typesafe Inc. <http://www.typesafe.com>
+ * Copyright (C) 2009-2015 Typesafe Inc. <http://www.typesafe.com>
  */
 package play.api
 
@@ -257,7 +257,7 @@ object Logger extends LoggerLike {
   /**
    * Reconfigures the underlying logback infrastructure.
    */
-  def configure(properties: Map[String, String], config: Option[URL], levels: Map[String, LogbackLevel]): Unit = {
+  def configure(properties: Map[String, String], config: Option[URL], levels: Map[String, LogbackLevel]): Unit = synchronized {
     // Redirect JUL -> SL4FJ
     {
       import org.slf4j.bridge._
